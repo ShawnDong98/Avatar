@@ -218,33 +218,32 @@ class Writer:
         label, pts_list = vis_label(orig_img, result)
 
         id_list = []
-        for pts in pts_list:
-            left = int(pts[0][0] * 2) - 15
-            top = int(pts[0][1]) - 15
-            right = int(pts[0][0] * 2) + 15
-            bottom = int(pts[0][1]) + 15
+        for box in boxes:
+            left = int(box[0])
+            top = int(box[1])
+            right = int(box[2])
+            bottom = int(box[3])
             cv2.rectangle(img, (left, top), (right, bottom), (0, 255, 0))
-            face_img = orig_img[top:bottom, left:right]
-            if face_img.shape[0] >= 5 and face_img.shape[1] >= 5:
-                # print(face_img.shape)
-                # cv2.imwrite(f"output/face_others/{im_name}", face_img)
-                person_id = self.faceR(face_img, im_name)
-                id_list.append(person_id)
-                if person_id == 0:
-                    cv2.putText(img, 'clw',(left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-                if person_id == 1:
-                    cv2.putText(img, 'lwx',(left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-                if person_id == 2:
-                    cv2.putText(img, 'others',(left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+            person_img = orig_img[top:bottom, left:right]
+            if person_img.shape[0] >= 5 and person_img.shape[1] >= 5:
+                pass
+                # person_id = self.faceR(face_img, im_name)
+                # id_list.append(person_id)
+                # if person_id == 0:
+                #     cv2.putText(img, 'clw',(left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                # if person_id == 1:
+                #     cv2.putText(img, 'lwx',(left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+                # if person_id == 2:
+                #     cv2.putText(img, 'others',(left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
 
-        #--- 可视化使用 ---
-        show_img = cv2.putText(orig_img, 'FPS: %f' % (1.0 / (time.time() - fps_time)),(10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+        # #--- 可视化使用 ---
+        # show_img = cv2.putText(orig_img, 'FPS: %f' % (1.0 / (time.time() - fps_time)),(10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
 
-        show_img = cv2.resize(show_img, (1024, 512))
-        cv2.imshow("AlphaPose Demo", show_img)
+        # show_img = cv2.resize(show_img, (1024, 512))
+        # cv2.imshow("AlphaPose Demo", show_img)
 
-        return pts_list, id_list
+        return pts_list, id_list, person_img
 
 class Sk_Detector():
     def __init__(self, batchSize=1):
@@ -270,7 +269,7 @@ class Sk_Detector():
 
         self.batchSize = batchSize
 
-    def __call__(self, i):
+    def __call__(self, i, debug=True):
         fps_time = time.time()
         pts_list = None
         id_list = None
@@ -299,9 +298,12 @@ class Sk_Detector():
 
 
             hm = hm.cpu().data
-            pts_list, id_list = self.writer(boxes, scores, hm, pt1, pt2, orig_img, im_name.split('/')[-1], fps_time)
+            pts_list, id_list, person_img = self.writer(boxes, scores, hm, pt1, pt2, orig_img, im_name.split('/')[-1], fps_time)
 
-        return pts_list, id_list
+        if debug == True:
+            return pts_list, id_list, orig_img, person_img
+        else:
+           return pts_list, id_list
 
     def KeypointList(self):
         KptList = []
@@ -356,17 +358,18 @@ class Sk_Detector():
         left, right = self.find_left_right(kp_preds)
 
         l_pair = [
-            (0, 1), (0, 2), (1, 3), (2, 4),  # Head
             (5, 6), (5, 7), (7, 9), (6, 8), (8, 10),
             (17, 11), (17, 12),  # Body
             (11, 13), (12, 14), (13, 15), (14, 16), 
         ]
 
 
-        label = [i for i in range(1, 16)]
 
 
-        img = np.zeros(((512, 1024)+(1, ))).astype(np.uint8)
+        label = [i for i in range(1, 14)]
+        
+
+        img = np.zeros(((256, 512)+(1, ))).astype(np.uint8)
         height,width = img.shape[:2]
 
         #--- 先缩小分辨率画图，画好后插值上采样 ---
@@ -374,18 +377,13 @@ class Sk_Detector():
         
         part_line = {}
         for n in range(kp_preds.shape[0]):
-            #--- 不管概率多少，全部画出来 ---
-            # if kp_scores[n] <= 0.05:
-            #     continue
             cor_x, cor_y = int(kp_preds[n, 0]), int(kp_preds[n, 1])
             part_line[n] = (int(cor_x/2), int(cor_y/2))
 
-            #--- 不画下面的关节点 ---
-            # bg = img.copy()
-            # cv2.circle(bg, (int(cor_x/2), int(cor_y/2)), 2, p_color[n], -1)
-            # # Now create a mask of logo and create its inverse mask also
-            # transparency = float(max(0, min(1, kp_scores[n])))
-            # img = cv2.addWeighted(bg, transparency, img, 1-transparency, 0)
+
+            if n == 0:
+                img = cv2.circle(img, (int(cor_x/2), int(cor_y/2)), 7, label[12], -1)
+
 
         # Draw limbs
         for i, (start_p, end_p) in enumerate(l_pair):
@@ -406,16 +404,36 @@ class Sk_Detector():
 
         img = cv2.resize(img,(width,height),interpolation=cv2.INTER_NEAREST)
 
-        img = Image.fromarray(img)
+        # img = Image.fromarray(img)
     
 
         return img, left, right
+
+
+def save_datasets(base_dir, orig_img, label, person, f):
+    if not os.path.exists(os.path.join(base_dir, "train_img")):
+        os.makedirs(os.path.join(base_dir, "train_img"))
+    if not os.path.exists(os.path.join(base_dir, "train_label")):
+        os.makedirs(os.path.join(base_dir, "train_label"))
+    if not os.path.exists(os.path.join(base_dir, "person")):
+        os.makedirs(os.path.join(base_dir, "person"))
+
+    print(os.path.join(base_dir, "train_img", f"{f}.png"))
+    cv2.imwrite(os.path.join(base_dir, "train_img", f"{f}.png"), orig_img)
+    cv2.imwrite(os.path.join(base_dir, "train_label", f"{f}.png"), label)
+    cv2.imwrite(os.path.join(base_dir, "person", f"{f}.png"), person)
+    
 
 
 if __name__ == '__main__':
     sk = Sk_Detector()
     f = 0
     while True:
-        pts_list, id_list = sk(f)
+        pts_list, id_list, orig_img, person_img = sk(f)
+        label, _, _ = sk.draw_label(pts_list[0])
+        cv2.imshow("orig", orig_img)
+        cv2.imshow("test", label)
+        cv2.imshow("person", person_img)
+        save_datasets("../datasets/Avatar/lwx", orig_img, label, person_img, f)
         cv2.waitKey(1)
         f += 1
